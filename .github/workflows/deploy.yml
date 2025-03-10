@@ -32,18 +32,23 @@ jobs:
           java-version: '11'
           distribution: 'adopt'
       
-      - name: Display Repository Structure
+      - name: Debugging Repository Structure
         run: |
+          echo "Current working directory: $(pwd)"
+          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
           echo "Repository contents:"
-          find . -type f | grep -v "/.git/" | sort
-      
-      - name: Create Proper XML Master Changelog
-        run: |
-          # Make sure the directory exists
-          mkdir -p dbscripts
+          find $GITHUB_WORKSPACE -type f -not -path "*/\.*" | sort
           
-          # Create a proper XML changelog file
-          cat > dbscripts/master.xml << 'EOF'
+          echo "Looking specifically for changelog files:"
+          find $GITHUB_WORKSPACE -name "*.sql" -o -name "*.xml" | grep -v "/.git/"
+      
+      - name: Fix Master Changelog
+        run: |
+          # Ensure the directory exists
+          mkdir -p $GITHUB_WORKSPACE/dbscripts
+          
+          # Create a proper XML changelog file, overwriting if it exists
+          cat > $GITHUB_WORKSPACE/dbscripts/master.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <databaseChangeLog
               xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
@@ -56,9 +61,12 @@ jobs:
           </databaseChangeLog>
           EOF
           
-          # Verify the file was created
-          echo "Master changelog created:"
-          cat dbscripts/master.xml
+          # Verify the XML file was created properly
+          echo "Contents of master.xml:"
+          cat $GITHUB_WORKSPACE/dbscripts/master.xml
+          
+          # Verify file permissions
+          ls -la $GITHUB_WORKSPACE/dbscripts/
       
       - name: Download and Extract Liquibase
         run: |
@@ -73,28 +81,63 @@ jobs:
           cd liquibase
           mkdir -p lib
           wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O lib/snowflake-jdbc-3.14.5.jar
-          echo "JDBC driver downloaded:"
-          ls -la lib/
       
-      - name: Run Liquibase Action
+      - name: Verify SQL Change Files
+        run: |
+          # Ensure change1.sql exists and has proper format
+          if [ ! -f "$GITHUB_WORKSPACE/dbscripts/change1.sql" ]; then
+            cat > $GITHUB_WORKSPACE/dbscripts/change1.sql << 'EOF'
+          -- liquibase formatted sql
+          -- changeset your-name:3
+          CREATE TABLE test_table3 (
+              test_id INT NOT NULL,
+              test_name VARCHAR(255),
+              PRIMARY KEY (test_id)
+          );
+          -- rollback DROP TABLE test_table3;
+          EOF
+          fi
+          
+          # Ensure change2.sql exists and has proper format
+          if [ ! -f "$GITHUB_WORKSPACE/dbscripts/change2.sql" ]; then
+            cat > $GITHUB_WORKSPACE/dbscripts/change2.sql << 'EOF'
+          -- liquibase formatted sql
+          -- changeset your-name:2
+          CREATE TABLE test_table2 (
+              test_id INT NOT NULL,
+              test_name VARCHAR(255),
+              PRIMARY KEY (test_id)
+          );
+          -- rollback DROP TABLE test_table2;
+          EOF
+          fi
+          
+          echo "SQL files in dbscripts directory:"
+          ls -la $GITHUB_WORKSPACE/dbscripts/
+      
+      - name: Run Liquibase
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
-          # Verify everything is in place
-          echo "Repository structure:"
-          find $GITHUB_WORKSPACE -type f | grep -v "/.git/" | sort
-          
           cd $GITHUB_WORKSPACE/liquibase
           
-          # Use absolute path for changelog file and include search path
+          # Test the file paths directly
+          echo "Testing if files exist:"
+          test -f $GITHUB_WORKSPACE/dbscripts/master.xml && echo "master.xml exists" || echo "master.xml MISSING"
+          test -f $GITHUB_WORKSPACE/dbscripts/change1.sql && echo "change1.sql exists" || echo "change1.sql MISSING"
+          test -f $GITHUB_WORKSPACE/dbscripts/change2.sql && echo "change2.sql exists" || echo "change2.sql MISSING"
+          
+          # Use --searchPath instead of --search-path (correct parameter name)
+          echo "Running Liquibase with full debug:"
           ./liquibase \
             --classpath=./lib/snowflake-jdbc-3.14.5.jar \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
             --username=${{ secrets.SNOWFLAKE_USER }} \
             --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-            --changelog-file=$GITHUB_WORKSPACE/dbscripts/master.xml \
-            --search-path=$GITHUB_WORKSPACE/dbscripts \
+            --changeLogFile=$GITHUB_WORKSPACE/dbscripts/master.xml \
+            --searchPath=$GITHUB_WORKSPACE/dbscripts \
+            --logLevel=DEBUG \
             validate
           
           # Determine action
@@ -106,9 +149,9 @@ jobs:
               --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --changelog-file=$GITHUB_WORKSPACE/dbscripts/master.xml \
-              --search-path=$GITHUB_WORKSPACE/dbscripts \
-              rollbackCount ${{ github.event.inputs.rollbackCount }} --logLevel=debug
+              --changeLogFile=$GITHUB_WORKSPACE/dbscripts/master.xml \
+              --searchPath=$GITHUB_WORKSPACE/dbscripts \
+              rollbackCount ${{ github.event.inputs.rollbackCount }} --logLevel=DEBUG
           else
             echo "Performing update"
             ./liquibase \
@@ -117,7 +160,7 @@ jobs:
               --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --changelog-file=$GITHUB_WORKSPACE/dbscripts/master.xml \
-              --search-path=$GITHUB_WORKSPACE/dbscripts \
-              update --logLevel=debug
+              --changeLogFile=$GITHUB_WORKSPACE/dbscripts/master.xml \
+              --searchPath=$GITHUB_WORKSPACE/dbscripts \
+              update --logLevel=DEBUG
           fi
