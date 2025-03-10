@@ -39,16 +39,26 @@ jobs:
           wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
           chmod +x liquibase
-          mkdir -p lib
+          echo "Current directory contents:"
+          ls -la
       
       - name: Download Snowflake JDBC Driver
         run: |
           cd liquibase
-          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
-          mv snowflake-jdbc-3.14.5.jar lib/
+          # Create lib directory if it doesn't exist
+          mkdir -p lib
+          # Download driver directly to the lib folder
+          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O lib/snowflake-jdbc-3.14.5.jar
+          # Verify the file is there
+          echo "JDBC driver downloaded:"
+          ls -la lib/
+          
+          # Add driver to the classpath explicitly
+          echo "driver=${PWD}/lib/snowflake-jdbc-3.14.5.jar" >> liquibase.properties
       
       - name: Create Master Changelog
         run: |
+          mkdir -p dbscripts
           cat > dbscripts/master.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <databaseChangeLog
@@ -69,13 +79,21 @@ jobs:
         run: |
           cd liquibase
           
-          # Common parameters
+          # Debugging to check if files exist
+          echo "Checking for driver file:"
+          find . -name "snowflake-jdbc-3.14.5.jar"
+          
+          # Common parameters with absolute paths and explicit driver location
           LIQUIBASE_PARAMS="--username=${{ secrets.SNOWFLAKE_USER }} \
             --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --classpath=${PWD}/lib/snowflake-jdbc-3.14.5.jar \
             --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
-            --changelog-file=../dbscripts/master.xml"
+            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
+            --changelog-file=${GITHUB_WORKSPACE}/dbscripts/master.xml"
+          
+          # Try to load the driver explicitly 
+          echo "Validating JDBC driver:"
+          ./liquibase --classpath=${PWD}/lib/snowflake-jdbc-3.14.5.jar driver-info
           
           # Determine action
           if [[ "${{ github.event.inputs.action }}" == "rollback" ]]; then
@@ -83,7 +101,7 @@ jobs:
             ./liquibase $LIQUIBASE_PARAMS rollbackCount ${{ github.event.inputs.rollbackCount }} --logLevel=debug
           else
             echo "Performing update"
-            ./liquibase $LIQUIBASE_PARAMS update
+            ./liquibase $LIQUIBASE_PARAMS update --logLevel=debug
           fi
           
           # Status check
