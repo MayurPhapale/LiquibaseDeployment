@@ -7,4 +7,4 @@ CREATE TABLE test_table3 (
     PRIMARY KEY (test_id)
 );
 
--- rollback DROP TABLE test_table;
+-- rollback DROP TABLE test_table3;
