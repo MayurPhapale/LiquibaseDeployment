@@ -1,9 +1,23 @@
-name: Deploy to Snowflake
-
+name: Deploy to Snowflake with Rollback Support
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'update'
+        type: choice
+        options:
+          - update
+          - rollback
+      rollbackCount:
+        description: 'Number of changesets to rollback'
+        required: false
+        default: '1'
+        type: string
 
 jobs:
   deploy:
@@ -11,57 +25,67 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+      
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
           java-version: '11'
           distribution: 'adopt'
-
+      
       - name: Download and Extract Liquibase
         run: |
-          touch 1
-          touch rg
-          sudo mkdir lb
-          sudo mkdir liquibase
-          sudo chown -R runner:docker liquibase
-          pwd
-          
-          ls -lart
-          
+          mkdir -p liquibase
           cd liquibase
-          wget -q  https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
+          wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
-          pwd
-          ls -lart
-
-      - name: Create lib directory for drivers
-        run: |
-          pwd
-          ls -lart
-          cd liquibase
-          ls -lart
-          ls -lart liquibase
+          chmod +x liquibase
           mkdir -p lib
-
+      
       - name: Download Snowflake JDBC Driver
         run: |
           cd liquibase
           wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
-          ls -lart 
-          pwd
           mv snowflake-jdbc-3.14.5.jar lib/
-
-      - name: Run Liquibase Update
+      
+      - name: Create Master Changelog
+        run: |
+          cat > dbscripts/master.xml << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <databaseChangeLog
+              xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+                    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
+              
+              <include file="change1.sql" relativeToChangelogFile="true"/>
+              <include file="change2.sql" relativeToChangelogFile="true"/>
+              <!-- Add new SQL files here -->
+          </databaseChangeLog>
+          EOF
+      
+      - name: Run Liquibase Action
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
-          echo $PATH
-          pwd
-          find . -type f -name change1.sql
-          ls -lart /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts/change1.sql
-      
-          
           cd liquibase
-          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts update  --changelog-file=change1.sql  --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
-          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts rollbackCount 1 --logLevel=debug --changelog-file=change1.sql --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
+          
+          # Common parameters
+          LIQUIBASE_PARAMS="--username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --changelog-file=../dbscripts/master.xml"
+          
+          # Determine action
+          if [[ "${{ github.event.inputs.action }}" == "rollback" ]]; then
+            echo "Performing rollback of ${{ github.event.inputs.rollbackCount }} changesets"
+            ./liquibase $LIQUIBASE_PARAMS rollbackCount ${{ github.event.inputs.rollbackCount }} --logLevel=debug
+          else
+            echo "Performing update"
+            ./liquibase $LIQUIBASE_PARAMS update
+          fi
+          
+          # Status check
+          echo "Current Liquibase Status:"
+          ./liquibase $LIQUIBASE_PARAMS status
