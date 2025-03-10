@@ -1,23 +1,9 @@
-name: Deploy to Snowflake with Rollback Support
+name: Deploy to Snowflake
+
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'update'
-        type: choice
-        options:
-          - update
-          - rollback
-      rollbackCount:
-        description: 'Number of changesets to rollback'
-        required: false
-        default: '1'
-        type: string
 
 jobs:
   deploy:
@@ -25,142 +11,61 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
           java-version: '11'
           distribution: 'adopt'
-      
-      - name: Debugging Repository Structure
-        run: |
-          echo "Current working directory: $(pwd)"
-          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-          echo "Repository contents:"
-          find $GITHUB_WORKSPACE -type f -not -path "*/\.*" | sort
-          
-          echo "Looking specifically for changelog files:"
-          find $GITHUB_WORKSPACE -name "*.sql" -o -name "*.xml" | grep -v "/.git/"
-      
-      - name: Fix Master Changelog
-        run: |
-          # Ensure the directory exists
-          mkdir -p $GITHUB_WORKSPACE/dbscripts
-          
-          # Create a proper XML changelog file, overwriting if it exists
-          cat > $GITHUB_WORKSPACE/dbscripts/master.xml << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <databaseChangeLog
-              xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
-              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-              xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
-                    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.9.xsd">
-              
-              <include file="change1.sql" relativeToChangelogFile="true"/>
-              <include file="change2.sql" relativeToChangelogFile="true"/>
-          </databaseChangeLog>
-          EOF
-          
-          # Verify the XML file was created properly
-          echo "Contents of master.xml:"
-          cat $GITHUB_WORKSPACE/dbscripts/master.xml
-          
-          # Verify file permissions
-          ls -la $GITHUB_WORKSPACE/dbscripts/
-      
+
       - name: Download and Extract Liquibase
         run: |
-          mkdir -p liquibase
+          sudo mkdir -p liquibase
+          sudo chown -R runner:docker liquibase
           cd liquibase
           wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
-          chmod +x liquibase
-      
+          mkdir -p lib
+          echo "Liquibase setup complete."
+
       - name: Download Snowflake JDBC Driver
         run: |
           cd liquibase
-          mkdir -p lib
-          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O lib/snowflake-jdbc-3.14.5.jar
-      
-      - name: Verify SQL Change Files
+          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
+          mv snowflake-jdbc-3.14.5.jar lib/
+          echo "Snowflake JDBC driver downloaded."
+
+      - name: Verify SQL File Existence
         run: |
-          # Ensure change1.sql exists and has proper format
-          if [ ! -f "$GITHUB_WORKSPACE/dbscripts/change1.sql" ]; then
-            cat > $GITHUB_WORKSPACE/dbscripts/change1.sql << 'EOF'
-          -- liquibase formatted sql
-          -- changeset your-name:3
-          CREATE TABLE test_table3 (
-              test_id INT NOT NULL,
-              test_name VARCHAR(255),
-              PRIMARY KEY (test_id)
-          );
-          -- rollback DROP TABLE test_table3;
-          EOF
+          echo "Checking if change1.sql exists..."
+          find /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts -type f -name "*.sql"
+          if [ ! -f "/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts/change1.sql" ]; then
+            echo "ERROR: change1.sql not found!"
+            exit 1
+          else
+            echo "change1.sql found!"
           fi
-          
-          # Ensure change2.sql exists and has proper format
-          if [ ! -f "$GITHUB_WORKSPACE/dbscripts/change2.sql" ]; then
-            cat > $GITHUB_WORKSPACE/dbscripts/change2.sql << 'EOF'
-          -- liquibase formatted sql
-          -- changeset your-name:2
-          CREATE TABLE test_table2 (
-              test_id INT NOT NULL,
-              test_name VARCHAR(255),
-              PRIMARY KEY (test_id)
-          );
-          -- rollback DROP TABLE test_table2;
-          EOF
-          fi
-          
-          echo "SQL files in dbscripts directory:"
-          ls -la $GITHUB_WORKSPACE/dbscripts/
-      
-      - name: Run Liquibase
+
+      - name: Run Liquibase Update
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
-          cd $GITHUB_WORKSPACE/liquibase
-          
-          # Test the file paths directly
-          echo "Testing if files exist:"
-          test -f $GITHUB_WORKSPACE/dbscripts/master.xml && echo "master.xml exists" || echo "master.xml MISSING"
-          test -f $GITHUB_WORKSPACE/dbscripts/change1.sql && echo "change1.sql exists" || echo "change1.sql MISSING"
-          test -f $GITHUB_WORKSPACE/dbscripts/change2.sql && echo "change2.sql exists" || echo "change2.sql MISSING"
-          
-          # Use --searchPath instead of --search-path (correct parameter name)
-          echo "Running Liquibase with full debug:"
-          ./liquibase \
-            --classpath=./lib/snowflake-jdbc-3.14.5.jar \
-            --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-            --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
+          cd liquibase
+          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            update --logLevel=debug --changelog-file=change1.sql \
             --username=${{ secrets.SNOWFLAKE_USER }} \
             --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-            --changeLogFile=$GITHUB_WORKSPACE/dbscripts/master.xml \
-            --searchPath=$GITHUB_WORKSPACE/dbscripts \
-            --logLevel=DEBUG \
-            validate
-          
-          # Determine action
-          if [[ "${{ github.event.inputs.action }}" == "rollback" ]]; then
-            echo "Performing rollback of ${{ github.event.inputs.rollbackCount }} changesets"
-            ./liquibase \
-              --classpath=./lib/snowflake-jdbc-3.14.5.jar \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
-              --username=${{ secrets.SNOWFLAKE_USER }} \
-              --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --changeLogFile=$GITHUB_WORKSPACE/dbscripts/master.xml \
-              --searchPath=$GITHUB_WORKSPACE/dbscripts \
-              rollbackCount ${{ github.event.inputs.rollbackCount }} --logLevel=DEBUG
-          else
-            echo "Performing update"
-            ./liquibase \
-              --classpath=./lib/snowflake-jdbc-3.14.5.jar \
-              --driver=net.snowflake.client.jdbc.SnowflakeDriver \
-              --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
-              --username=${{ secrets.SNOWFLAKE_USER }} \
-              --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --changeLogFile=$GITHUB_WORKSPACE/dbscripts/master.xml \
-              --searchPath=$GITHUB_WORKSPACE/dbscripts \
-              update --logLevel=DEBUG
-          fi
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver'
+
+      - name: Check Snowflake Logs
+        run: |
+          echo "Checking Snowflake Query History..."
+          snowsql -q "SELECT query_id, query_text, execution_status FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY()) ORDER BY start_time DESC LIMIT 10;" \
+            --username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --accountname=WXVXDID-ZN02370 \
+            --dbname=${{ secrets.SNOWFLAKE_DATABASE }} \
+            --schemaname=${{ secrets.SNOWFLAKE_SCHEMA }} \
+            --warehousename=COMPUTE_WH
