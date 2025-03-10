@@ -1,0 +1,67 @@
+name: Deploy to Snowflake
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '11'
+          distribution: 'adopt'
+
+      - name: Download and Extract Liquibase
+        run: |
+          touch 1
+          touch rg
+          sudo mkdir lb
+          sudo mkdir liquibase
+          sudo chown -R runner:docker liquibase
+          pwd
+          
+          ls -lart
+          
+          cd liquibase
+          wget -q  https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
+          tar -xzf liquibase-4.25.0.tar.gz
+          pwd
+          ls -lart
+
+      - name: Create lib directory for drivers
+        run: |
+          pwd
+          ls -lart
+          cd liquibase
+          ls -lart
+          ls -lart liquibase
+          mkdir -p lib
+
+      - name: Download Snowflake JDBC Driver
+        run: |
+          cd liquibase
+          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
+          ls -lart 
+          pwd
+          mv snowflake-jdbc-3.14.5.jar lib/
+
+      - name: Run Liquibase Update
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
+        run: |
+          echo $PATH
+          pwd
+          find . -type f -name change1.sql
+          ls -lart /home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts/change1.sql
+      
+          
+          cd liquibase
+          ./liquibase --search-path=/home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts update  --changelog-file=change1.sql  --username=${{ secrets.SF_USERNAME }} --password=${{ secrets.SF_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://BBKMASD-NI55804.snowflakecomputing.com/?db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
+          ./liquibase --search-path=/home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts rollbackCount 1 --logLevel=debug --changelog-file=change1.sql --username=${{ secrets.SF_USERNAME }} --password=${{ secrets.SF_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://BBKMASD-NI55804.snowflakecomputing.com/?db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
