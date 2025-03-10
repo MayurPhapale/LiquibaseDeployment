@@ -1,0 +1,3 @@
+-- liquibase formatted sql
+-- include file:change1.sql
+-- include file:change2.sql
