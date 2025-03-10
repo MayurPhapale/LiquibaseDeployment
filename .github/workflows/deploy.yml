@@ -54,14 +54,14 @@ jobs:
 
       - name: Run Liquibase Update
         env:
-          SNOWFLAKE_PASSWORD: ${{ secrets.SF_PASSWORD }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
           echo $PATH
           pwd
           find . -type f -name change1.sql
-          ls -lart /home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts/change1.sql
+          ls -lart /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts/change1.sql
       
           
           cd liquibase
-          ./liquibase --search-path=/home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts update  --changelog-file=change1.sql  --username=${{ secrets.SF_USERNAME }} --password=${{ secrets.SF_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://BBKMASD-NI55804.snowflakecomputing.com/?db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
-          ./liquibase --search-path=/home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts rollbackCount 1 --logLevel=debug --changelog-file=change1.sql --username=${{ secrets.SF_USERNAME }} --password=${{ secrets.SF_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://BBKMASD-NI55804.snowflakecomputing.com/?db=${{ secrets.SF_DATABASE }}&schema=${{ secrets.SF_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
+          ./liquibase --search-path=/home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts update  --changelog-file=change1.sql  --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
+          ./liquibase --search-path=/home/runner/work/liquibase_CICD/liquibase_CICD/dbscripts rollbackCount 1 --logLevel=debug --changelog-file=change1.sql --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema={{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
