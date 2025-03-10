@@ -32,47 +32,17 @@ jobs:
           java-version: '11'
           distribution: 'adopt'
       
-      - name: Download and Extract Liquibase
+      - name: Display Repository Structure
         run: |
-          mkdir -p liquibase
-          cd liquibase
-          wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
-          tar -xzf liquibase-4.25.0.tar.gz
-          chmod +x liquibase
-          echo "Current directory contents:"
-          ls -la
+          echo "Repository contents:"
+          find . -type f | grep -v "/.git/" | sort
       
-      - name: Download Snowflake JDBC Driver
+      - name: Create Proper XML Master Changelog
         run: |
-          # Create lib directory in the right location
-          mkdir -p liquibase/internal/lib
-          cd liquibase
-          
-          # Download driver to both possible locations
-          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O internal/lib/snowflake-jdbc-3.14.5.jar
-          
-          # Also download to regular lib for classpath
-          mkdir -p lib
-          cp internal/lib/snowflake-jdbc-3.14.5.jar lib/
-          
-          # Verify the files are there
-          echo "JDBC driver locations:"
-          find . -name "snowflake-jdbc-3.14.5.jar" -type f
-      
-      - name: Create liquibase.properties
-        run: |
-          cd liquibase
-          cat > liquibase.properties << EOF
-          classpath=./lib/snowflake-jdbc-3.14.5.jar
-          driver=net.snowflake.client.jdbc.SnowflakeDriver
-          url=jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH
-          username=${{ secrets.SNOWFLAKE_USER }}
-          password=${{ secrets.SNOWFLAKE_PASSWORD }}
-          EOF
-      
-      - name: Create Master Changelog
-        run: |
+          # Make sure the directory exists
           mkdir -p dbscripts
+          
+          # Create a proper XML changelog file
           cat > dbscripts/master.xml << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <databaseChangeLog
@@ -83,32 +53,49 @@ jobs:
               
               <include file="change1.sql" relativeToChangelogFile="true"/>
               <include file="change2.sql" relativeToChangelogFile="true"/>
-              <!-- Add new SQL files here -->
           </databaseChangeLog>
           EOF
+          
+          # Verify the file was created
+          echo "Master changelog created:"
+          cat dbscripts/master.xml
+      
+      - name: Download and Extract Liquibase
+        run: |
+          mkdir -p liquibase
+          cd liquibase
+          wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
+          tar -xzf liquibase-4.25.0.tar.gz
+          chmod +x liquibase
+      
+      - name: Download Snowflake JDBC Driver
+        run: |
+          cd liquibase
+          mkdir -p lib
+          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O lib/snowflake-jdbc-3.14.5.jar
+          echo "JDBC driver downloaded:"
+          ls -la lib/
       
       - name: Run Liquibase Action
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
-          cd liquibase
+          # Verify everything is in place
+          echo "Repository structure:"
+          find $GITHUB_WORKSPACE -type f | grep -v "/.git/" | sort
           
-          # Test if we can load the JDBC driver
-          java -cp ./lib/snowflake-jdbc-3.14.5.jar net.snowflake.client.jdbc.SnowflakeDriver 2>&1 || echo "Driver class not loaded properly"
+          cd $GITHUB_WORKSPACE/liquibase
           
-          # Verify liquibase can see the driver directory
-          ./liquibase --version
-          
-          # Try checking status to validate configuration
-          echo "Testing connection to Snowflake:"
+          # Use absolute path for changelog file and include search path
           ./liquibase \
             --classpath=./lib/snowflake-jdbc-3.14.5.jar \
             --driver=net.snowflake.client.jdbc.SnowflakeDriver \
             --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
             --username=${{ secrets.SNOWFLAKE_USER }} \
             --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-            --changelog-file=${GITHUB_WORKSPACE}/dbscripts/master.xml \
-            status --verbose
+            --changelog-file=$GITHUB_WORKSPACE/dbscripts/master.xml \
+            --search-path=$GITHUB_WORKSPACE/dbscripts \
+            validate
           
           # Determine action
           if [[ "${{ github.event.inputs.action }}" == "rollback" ]]; then
@@ -119,7 +106,8 @@ jobs:
               --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --changelog-file=${GITHUB_WORKSPACE}/dbscripts/master.xml \
+              --changelog-file=$GITHUB_WORKSPACE/dbscripts/master.xml \
+              --search-path=$GITHUB_WORKSPACE/dbscripts \
               rollbackCount ${{ github.event.inputs.rollbackCount }} --logLevel=debug
           else
             echo "Performing update"
@@ -129,6 +117,7 @@ jobs:
               --url="jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH" \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --changelog-file=${GITHUB_WORKSPACE}/dbscripts/master.xml \
+              --changelog-file=$GITHUB_WORKSPACE/dbscripts/master.xml \
+              --search-path=$GITHUB_WORKSPACE/dbscripts \
               update --logLevel=debug
           fi
