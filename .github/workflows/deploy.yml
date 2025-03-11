@@ -69,7 +69,7 @@ jobs:
             
             # Capture current state before update for tracking
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
-              --changelog-file=change1.sql \
+              --changelog-file=change2.sql \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
@@ -80,7 +80,7 @@ jobs:
             # Perform the update
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
               update \
-              --changelog-file=change1.sql \
+              --changelog-file=change2.sql \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
@@ -92,7 +92,7 @@ jobs:
             
             # Capture current state before rollback for tracking
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
-              --changelog-file=change1.sql \
+              --changelog-file=change2.sql \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
@@ -103,7 +103,7 @@ jobs:
             # Output SQL that would be executed during rollback (for logging)
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
               rollbackCount $ROLLBACK_COUNT \
-              --changelog-file=change1.sql \
+              --changelog-file=change2.sql \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
@@ -114,7 +114,7 @@ jobs:
             # Perform the actual rollback
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
               rollbackCount $ROLLBACK_COUNT \
-              --changelog-file=change1.sql \
+              --changelog-file=change2.sql \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
@@ -125,9 +125,9 @@ jobs:
           # Update the deployment history log
           echo "Operation: $ACTION completed at $(date)" >> logs/deployment_history.log
           
-      # Archive logs as artifacts
+      # Archive logs as artifacts - using latest version (v4)
       - name: Archive Logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: liquibase-logs
           path: logs/
