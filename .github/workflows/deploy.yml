@@ -1,4 +1,4 @@
-name: Deploy to Snowflake with Rollback Logging
+name: Deploy to Snowflake with Basic Logging
 
 on:
   push:
@@ -46,12 +46,6 @@ jobs:
           wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
           mv snowflake-jdbc-3.14.5.jar lib/
 
-      # Setup logging directory
-      - name: Setup Logging Directory
-        run: |
-          mkdir -p logs
-          echo "Deployment started at $(date)" > logs/deployment_history.log
-
       # Run Liquibase Update or Rollback based on workflow input
       - name: Run Liquibase Operation
         env:
@@ -59,75 +53,76 @@ jobs:
         run: |
           ACTION="${{ github.event.inputs.action || 'update' }}"
           ROLLBACK_COUNT="${{ github.event.inputs.rollbackCount || '1' }}"
-          TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-          LOG_FILE="logs/liquibase_${ACTION}_${TIMESTAMP}.log"
           
           cd liquibase
           
+          # Set basic details for logging
+          CHANGESET="your-name:3"
+          AUTHOR="your-name"
+          FILENAME="change2.sql"
+          TARGET="test_table3"
+          
           if [ "$ACTION" == "update" ]; then
-            echo "Performing update operation" | tee -a $LOG_FILE
-            
-            # Capture current state before update for tracking
-            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
-              --changelog-file=change2.sql \
-              --username=${{ secrets.SNOWFLAKE_USER }} \
-              --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --classpath=lib/snowflake-jdbc-3.14.5.jar \
-              --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
-              history | tee -a $LOG_FILE
+            echo "Performing update operation"
+            ACTION_TYPE="CREATE TABLE"
             
             # Perform the update
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
               update \
-              --changelog-file=change2.sql \
+              --changelog-file=$FILENAME \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
               --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              --driver='net.snowflake.client.jdbc.SnowflakeDriver' | tee -a $LOG_FILE
+              --driver='net.snowflake.client.jdbc.SnowflakeDriver'
               
           elif [ "$ACTION" == "rollback" ]; then
-            echo "Performing rollback operation (count: $ROLLBACK_COUNT)" | tee -a $LOG_FILE
+            echo "Performing rollback operation (count: $ROLLBACK_COUNT)"
+            ACTION_TYPE="DROP TABLE"
             
-            # Capture current state before rollback for tracking
-            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
-              --changelog-file=change2.sql \
-              --username=${{ secrets.SNOWFLAKE_USER }} \
-              --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --classpath=lib/snowflake-jdbc-3.14.5.jar \
-              --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
-              history | tee -a $LOG_FILE
-              
-            # Output SQL that would be executed during rollback (for logging)
+            # Perform the rollback
             ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
               rollbackCount $ROLLBACK_COUNT \
-              --changelog-file=change2.sql \
+              --changelog-file=$FILENAME \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
               --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
-              --output-file=logs/rollback_sql_${TIMESTAMP}.sql
-              
-            # Perform the actual rollback
-            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
-              rollbackCount $ROLLBACK_COUNT \
-              --changelog-file=change2.sql \
-              --username=${{ secrets.SNOWFLAKE_USER }} \
-              --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-              --classpath=lib/snowflake-jdbc-3.14.5.jar \
-              --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              --driver='net.snowflake.client.jdbc.SnowflakeDriver' | tee -a $LOG_FILE
+              --driver='net.snowflake.client.jdbc.SnowflakeDriver'
           fi
           
-          # Update the deployment history log
-          echo "Operation: $ACTION completed at $(date)" >> logs/deployment_history.log
+          # Create SQL file with the log entry
+          cat > log_operation.sql << EOF
+INSERT INTO LIQUIBASE_HISTORY (
+    OPERATION,
+    CHANGESET,
+    AUTHOR,
+    FILENAME,
+    EXECUTOR,
+    STATUS,
+    TARGET_OBJECT,
+    ACTION,
+    COUNT_VALUE
+) 
+VALUES (
+    '$ACTION',
+    '$CHANGESET',
+    '$AUTHOR',
+    '$FILENAME',
+    CURRENT_USER(),
+    'COMPLETED',
+    '$TARGET',
+    '$ACTION_TYPE',
+    $ROLLBACK_COUNT
+);
+EOF
           
-      # Archive logs as artifacts - using latest version (v4)
-      - name: Archive Logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: liquibase-logs
-          path: logs/
+          # Log to database
+          echo "Logging operation to Snowflake..."
+          ./liquibase \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --sqlFile=log_operation.sql
