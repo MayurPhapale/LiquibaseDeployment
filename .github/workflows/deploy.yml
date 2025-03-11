@@ -91,33 +91,37 @@ jobs:
               --driver='net.snowflake.client.jdbc.SnowflakeDriver'
           fi
           
-          # Create SQL file with the log entry
+      # Create SQL file with the log entry
+      - name: Create log operation SQL file
+        run: |
           cat > log_operation.sql << EOF
-INSERT INTO LIQUIBASE_HISTORY (
-    OPERATION,
-    CHANGESET,
-    AUTHOR,
-    FILENAME,
-    EXECUTOR,
-    STATUS,
-    TARGET_OBJECT,
-    ACTION,
-    COUNT_VALUE
-) 
-VALUES (
-    '$ACTION',
-    '$CHANGESET',
-    '$AUTHOR',
-    '$FILENAME',
-    CURRENT_USER(),
-    'COMPLETED',
-    '$TARGET',
-    '$ACTION_TYPE',
-    $ROLLBACK_COUNT
-);
-EOF
-          
-          # Log to database
+          INSERT INTO LIQUIBASE_HISTORY (
+              OPERATION,
+              CHANGESET,
+              AUTHOR,
+              FILENAME,
+              EXECUTOR,
+              STATUS,
+              TARGET_OBJECT,
+              ACTION,
+              COUNT_VALUE
+          ) 
+          VALUES (
+              '$ACTION',
+              '$CHANGESET',
+              '$AUTHOR',
+              '$FILENAME',
+              CURRENT_USER(),
+              'COMPLETED',
+              '$TARGET',
+              '$ACTION_TYPE',
+              $ROLLBACK_COUNT
+          );
+          EOF
+
+      # Log to database
+      - name: Log operation to Snowflake
+        run: |
           echo "Logging operation to Snowflake..."
           ./liquibase \
             --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
