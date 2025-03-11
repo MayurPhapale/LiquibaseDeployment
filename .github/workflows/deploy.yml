@@ -34,19 +34,15 @@ jobs:
           cd liquibase
           wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
-
+          chmod +x liquibase
+      
       - name: Create lib directory for drivers
-        run: |
-          cd liquibase
-          mkdir -p lib
-
+        run: mkdir -p liquibase/lib
+      
       - name: Download Snowflake JDBC Driver
         run: |
-          cd liquibase
-          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
-          mv snowflake-jdbc-3.14.5.jar lib/
-
-      # Run Liquibase Update or Rollback based on workflow input
+          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O liquibase/lib/snowflake-jdbc-3.14.5.jar
+      
       - name: Run Liquibase Operation
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
@@ -66,8 +62,8 @@ jobs:
             echo "Performing update operation"
             ACTION_TYPE="CREATE TABLE"
             
-            # Perform the update
-            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            ./liquibase \
+              --search-path=../dbscripts \
               update \
               --changelog-file=$FILENAME \
               --username=${{ secrets.SNOWFLAKE_USER }} \
@@ -75,13 +71,13 @@ jobs:
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
               --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
               --driver='net.snowflake.client.jdbc.SnowflakeDriver'
-              
+          
           elif [ "$ACTION" == "rollback" ]; then
             echo "Performing rollback operation (count: $ROLLBACK_COUNT)"
             ACTION_TYPE="DROP TABLE"
             
-            # Perform the rollback
-            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            ./liquibase \
+              --search-path=../dbscripts \
               rollbackCount $ROLLBACK_COUNT \
               --changelog-file=$FILENAME \
               --username=${{ secrets.SNOWFLAKE_USER }} \
@@ -91,7 +87,6 @@ jobs:
               --driver='net.snowflake.client.jdbc.SnowflakeDriver'
           fi
           
-      # Create SQL file with the log entry
       - name: Create log operation SQL file
         run: |
           cat > log_operation.sql << EOF
@@ -118,15 +113,15 @@ jobs:
               $ROLLBACK_COUNT
           );
           EOF
-
-      # Log to database
+      
       - name: Log operation to Snowflake
         run: |
           echo "Logging operation to Snowflake..."
+          cd liquibase
           ./liquibase \
             --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
             --username=${{ secrets.SNOWFLAKE_USER }} \
             --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
             --classpath=lib/snowflake-jdbc-3.14.5.jar \
             --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
-            --sqlFile=log_operation.sql
+            --sqlFile=../log_operation.sql
