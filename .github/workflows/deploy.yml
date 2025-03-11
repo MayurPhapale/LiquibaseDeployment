@@ -36,4 +36,40 @@ jobs:
         run: |
           find /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts -type f -name "*.sql"
 
-   
+      - name: Run Liquibase Update (Apply Changes)
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          cd liquibase
+          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            update --changelog-file=change2.sql \
+            --username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --logLevel=debug | tee liquibase.log
+
+      - name: Run Liquibase Rollback (Track Changes)
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          cd liquibase
+          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            rollbackCount 1 --changelog-file=change1.sql \
+            --username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --logLevel=debug | tee rollback.log
+          
+          echo "Rollback complete. Logs saved."
+
+      - name: Upload Liquibase Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: liquibase-logs
+          path: |
+            liquibase/liquibase.log
+            liquibase/rollback.log
