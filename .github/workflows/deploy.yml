@@ -34,16 +34,16 @@ jobs:
           cd liquibase
           wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
-          chmod +x liquibase
-      
       - name: Create lib directory for drivers
         run: |
-          mkdir -p liquibase/lib
-      
+          cd liquibase
+          mkdir -p lib
       - name: Download Snowflake JDBC Driver
         run: |
-          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar -O liquibase/lib/snowflake-jdbc-3.14.5.jar
-      
+          cd liquibase
+          wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
+          mv snowflake-jdbc-3.14.5.jar lib/
+      # Run Liquibase Update or Rollback based on workflow input
       - name: Run Liquibase Operation
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
@@ -53,30 +53,42 @@ jobs:
           
           cd liquibase
           
+          # Set basic details for logging
+          CHANGESET="your-name:3"
+          AUTHOR="your-name"
           FILENAME="change2.sql"
           TARGET="test_table3"
           
           if [ "$ACTION" == "update" ]; then
             echo "Performing update operation"
-            ./liquibase \
-              --changeLogFile=../dbscripts/$FILENAME \
+            ACTION_TYPE="CREATE TABLE"
+            
+            # Perform the update
+            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+              update \
+              --changelog-file=$FILENAME \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
               --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              update
-          
+              --driver='net.snowflake.client.jdbc.SnowflakeDriver'
+              
           elif [ "$ACTION" == "rollback" ]; then
             echo "Performing rollback operation (count: $ROLLBACK_COUNT)"
-            ./liquibase \
-              --changeLogFile=../dbscripts/$FILENAME \
+            ACTION_TYPE="DROP TABLE"
+            
+            # Perform the rollback
+            ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+              rollbackCount $ROLLBACK_COUNT \
+              --changelog-file=$FILENAME \
               --username=${{ secrets.SNOWFLAKE_USER }} \
               --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
               --classpath=lib/snowflake-jdbc-3.14.5.jar \
               --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-              rollbackCount $ROLLBACK_COUNT
+              --driver='net.snowflake.client.jdbc.SnowflakeDriver'
           fi
-      
+          
+      # Create SQL file with the log entry
       - name: Create log operation SQL file
         run: |
           cat > log_operation.sql << EOF
@@ -92,25 +104,25 @@ jobs:
               COUNT_VALUE
           ) 
           VALUES (
-              '${{ github.event.inputs.action || "update" }}',
-              'your-name:3',
-              'your-name',
-              'change2.sql',
+              '$ACTION',
+              '$CHANGESET',
+              '$AUTHOR',
+              '$FILENAME',
               CURRENT_USER(),
               'COMPLETED',
-              'test_table3',
-              '$(if [ "${{ github.event.inputs.action || "update" }}" == "update" ]; then echo "CREATE TABLE"; else echo "DROP TABLE"; fi)',
-              '${{ github.event.inputs.rollbackCount || "1" }}'
+              '$TARGET',
+              '$ACTION_TYPE',
+              $ROLLBACK_COUNT
           );
           EOF
-      
+      # Log to database
       - name: Log operation to Snowflake
         run: |
           echo "Logging operation to Snowflake..."
-          cd liquibase
           ./liquibase \
             --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
             --username=${{ secrets.SNOWFLAKE_USER }} \
             --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
             --classpath=lib/snowflake-jdbc-3.14.5.jar \
-            executeSql --sql-file=../log_operation.sql
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --sqlFile=log_operation.sql
