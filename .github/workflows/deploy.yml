@@ -58,7 +58,7 @@ jobs:
         run: |
           cd liquibase
           ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts rollbackCount 1 \
-          --changelog-file=change1.sql \
+          --changelog-file=change2.sql \
           --username=${{ secrets.SNOWFLAKE_USER }} \
           --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
           --classpath=lib/snowflake-jdbc-3.14.5.jar \
