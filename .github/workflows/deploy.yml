@@ -20,52 +20,45 @@ jobs:
 
       - name: Download and Extract Liquibase
         run: |
-          sudo mkdir -p liquibase
+          touch 1
+          touch rg
+          sudo mkdir lb
+          sudo mkdir liquibase
           sudo chown -R runner:docker liquibase
+          pwd
+          
+          ls -lart
+          
           cd liquibase
-          wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
+          wget -q  https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
+          pwd
+          ls -lart
+      - name: Create lib directory for drivers
+        run: |
+          pwd
+          ls -lart
+          cd liquibase
+          ls -lart
+          ls -lart liquibase
           mkdir -p lib
-          echo "Liquibase setup complete."
-
       - name: Download Snowflake JDBC Driver
         run: |
           cd liquibase
           wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
+          ls -lart 
+          pwd
           mv snowflake-jdbc-3.14.5.jar lib/
-          echo "Snowflake JDBC driver downloaded."
-
-      - name: Verify SQL File Existence
-        run: |
-          echo "Checking if change1.sql exists..."
-          find /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts -type f -name "*.sql"
-          if [ ! -f "/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts/change1.sql" ]; then
-            echo "ERROR: change1.sql not found!"
-            exit 1
-          else
-            echo "change1.sql found!"
-          fi
-
       - name: Run Liquibase Update
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
+          echo $PATH
+          pwd
+          find . -type f -name change1.sql
+          ls -lart /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts/change1.sql
+      
+          
           cd liquibase
-          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
-            update --logLevel=debug --changelog-file=change1.sql \
-            --username=${{ secrets.SNOWFLAKE_USER }} \
-            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-            --classpath=lib/snowflake-jdbc-3.14.5.jar \
-            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
-            --driver='net.snowflake.client.jdbc.SnowflakeDriver'
-
-      - name: Check Snowflake Logs
-        run: |
-          echo "Checking Snowflake Query History..."
-          snowsql -q "SELECT query_id, query_text, execution_status FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY()) ORDER BY start_time DESC LIMIT 10;" \
-            --username=${{ secrets.SNOWFLAKE_USER }} \
-            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
-            --accountname=WXVXDID-ZN02370 \
-            --dbname=${{ secrets.SNOWFLAKE_DATABASE }} \
-            --schemaname=${{ secrets.SNOWFLAKE_SCHEMA }} \
-            --warehousename=COMPUTE_WH
+          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts update  --changelog-file=change1.sql  --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
+          #./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts rollbackCount 1 --logLevel=debug --changelog-file=change1.sql --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
