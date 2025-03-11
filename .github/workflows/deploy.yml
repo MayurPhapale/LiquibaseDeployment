@@ -20,45 +20,56 @@ jobs:
 
       - name: Download and Extract Liquibase
         run: |
-          touch 1
-          touch rg
-          sudo mkdir lb
-          sudo mkdir liquibase
-          sudo chown -R runner:docker liquibase
-          pwd
-          
-          ls -lart
-          
+          sudo mkdir -p liquibase && sudo chown -R runner:docker liquibase
           cd liquibase
-          wget -q  https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
+          wget -q https://github.com/liquibase/liquibase/releases/download/v4.25.0/liquibase-4.25.0.tar.gz
           tar -xzf liquibase-4.25.0.tar.gz
-          pwd
-          ls -lart
-      - name: Create lib directory for drivers
-        run: |
-          pwd
-          ls -lart
-          cd liquibase
-          ls -lart
-          ls -lart liquibase
           mkdir -p lib
+
       - name: Download Snowflake JDBC Driver
         run: |
           cd liquibase
           wget -q https://repo1.maven.org/maven2/net/snowflake/snowflake-jdbc/3.14.5/snowflake-jdbc-3.14.5.jar
-          ls -lart 
-          pwd
           mv snowflake-jdbc-3.14.5.jar lib/
-      - name: Run Liquibase Update
+
+      - name: Verify SQL File Exists
+        run: |
+          find /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts -type f -name "*.sql"
+
+      - name: Run Liquibase Update (Apply Changes)
         env:
           SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
-          echo $PATH
-          pwd
-          find . -type f -name change2.sql
-          ls -lart /home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts/change2.sql
-      
-          
           cd liquibase
-          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts update  --changelog-file=change2.sql  --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
-          #./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts rollbackCount 1 --logLevel=debug --changelog-file=change1.sql --username=${{ secrets.SNOWFLAKE_USER }} --password=${{ secrets.SNOWFLAKE_PASSWORD }} --classpath=lib/snowflake-jdbc-3.14.5.jar --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' --driver='net.snowflake.client.jdbc.SnowflakeDriver' 
+          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            update --changelog-file=change2.sql \
+            --username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --logLevel=debug | tee liquibase.log
+
+      - name: Run Liquibase Rollback (Track Changes)
+        env:
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        run: |
+          cd liquibase
+          ./liquibase --search-path=/home/runner/work/LiquibaseDeployment/LiquibaseDeployment/dbscripts \
+            rollbackCount 1 --changelog-file=change1.sql \
+            --username=${{ secrets.SNOWFLAKE_USER }} \
+            --password=${{ secrets.SNOWFLAKE_PASSWORD }} \
+            --classpath=lib/snowflake-jdbc-3.14.5.jar \
+            --url='jdbc:snowflake://WXVXDID-ZN02370.snowflakecomputing.com/?db=${{ secrets.SNOWFLAKE_DATABASE }}&schema=${{ secrets.SNOWFLAKE_SCHEMA }}&warehouse=COMPUTE_WH' \
+            --driver='net.snowflake.client.jdbc.SnowflakeDriver' \
+            --logLevel=debug | tee rollback.log
+          
+          echo "Rollback complete. Logs saved."
+
+      - name: Upload Liquibase Logs
+        uses: actions/upload-artifact@v3
+        with:
+          name: liquibase-logs
+          path: |
+            liquibase/liquibase.log
+            liquibase/rollback.log
