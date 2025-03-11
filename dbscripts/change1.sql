@@ -7,4 +7,8 @@ CREATE TABLE test_table3 (
     PRIMARY KEY (test_id)
 );
 
--- rollback DROP TABLE test_table3;
+-- rollback BEGIN
+INSERT INTO liquibase_audit (action, changeset_id, timestamp) 
+VALUES ('ROLLBACK', 'your-name:3', CURRENT_TIMESTAMP);
+DROP TABLE test_table3;
+-- rollback END;
